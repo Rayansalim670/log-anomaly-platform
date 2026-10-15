@@ -36,7 +36,7 @@ Raw logs --> Parser --> Structured DataFrame --> Detectors --> Dashboard
 | `detect.py` | Parsing, detection logic, and GeoIP lookup |
 | `dashboard.py` | Streamlit UI and charts |
 | `generate_logs.py` | Generates synthetic logs with an injected attack |
-| `data/sample.log` | Bundled sample log so the dashboard works out of the box |
+| `data/sample.log` | Real SSH sample (OpenSSH_2k from LogHub) so the dashboard works out of the box |
 | `requirements.txt` | Python dependencies |
 
 ## Installation
@@ -61,9 +61,10 @@ Launch the dashboard:
 streamlit run dashboard.py
 ```
 
-The dashboard opens with the bundled `data/sample.log`. Upload your own SSH
-log from the sidebar. For logs without a year (syslog format), set the year in
-the sidebar.
+The dashboard opens with the bundled `data/sample.log`, which is a copy of
+`OpenSSH_2k.log` from the [LogHub](https://github.com/logpai/loghub) dataset
+(real SSH logs, year 2015). Upload your own SSH log from the sidebar. For logs
+without a year (syslog format), set the year in the sidebar.
 
 Run the detectors from the command line:
 
@@ -77,21 +78,17 @@ Generate a fresh synthetic log (optional):
 python generate_logs.py
 ```
 
-## Optional: GeoIP map
+## GeoIP map
 
-1. Create a free account at [maxmind.com](https://www.maxmind.com) and
-   download **GeoLite2 City** (GZIP).
-2. Extract it and place `GeoLite2-City.mmdb` in the `data/` folder.
+The attack map works out of the box: attacker IPs are located through the
+free ip-api.com service (public IPs only, up to 40 per run). For faster,
+offline lookups, download **GeoLite2 City** from maxmind.com (free account)
+and place `GeoLite2-City.mmdb` in `data/` (do not commit it; the license
+forbids redistribution).
 
-Do not commit the database: the MaxMind license forbids redistribution
-(`data/*.mmdb` is already in `.gitignore`). Without the file, the map section
-is skipped and everything else works normally.
+Note: with the online mode, public IPs found in your logs are sent to
+ip-api.com. Do not upload logs containing sensitive addresses.
 
-## Real-world test data
-
-Download `OpenSSH_2k.log` from the OpenSSH folder of the
-[LogHub](https://github.com/logpai/loghub) dataset and upload it in the
-dashboard with the year set to 2015.
 
 ## Tested on
 
