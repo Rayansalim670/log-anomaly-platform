@@ -1,8 +1,11 @@
+import os
 import re
 import pandas as pd
+import geoip2.database
 from sklearn.ensemble import IsolationForest
 
 COLUMNS = ["time", "status", "user", "ip", "invalid"]
+GEO_DB = "data/GeoLite2-City.mmdb"
 
 pattern = re.compile(
     r"(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) sshd "
@@ -115,6 +118,26 @@ def ml_anomalies(df, contamination=0.05):
     features["score"] = -model.score_samples(X)
     flagged = features[features["anomaly"] & (features["failures"] > 0)]
     return flagged.sort_values("score", ascending=False)
+
+
+def geolocate(ips):
+    if not os.path.exists(GEO_DB):
+        return pd.DataFrame()
+    rows = []
+    with geoip2.database.Reader(GEO_DB) as reader:
+        for ip in ips:
+            try:
+                r = reader.city(ip)
+                rows.append({
+                    "ip": ip,
+                    "country": r.country.name or "Unknown",
+                    "city": r.city.name or "",
+                    "lat": r.location.latitude,
+                    "lon": r.location.longitude,
+                })
+            except Exception:
+                continue
+    return pd.DataFrame(rows)
 
 
 if __name__ == "__main__":

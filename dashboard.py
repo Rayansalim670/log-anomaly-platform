@@ -2,7 +2,7 @@ import streamlit as st
 import plotly.express as px
 from detect import (
     parse_text, brute_force, incidents, invalid_users,
-    suspicious_success, ml_anomalies
+    suspicious_success, ml_anomalies, geolocate
 )
 
 st.set_page_config(page_title="Log Anomaly Dashboard", layout="wide")
@@ -39,6 +39,28 @@ c2.metric("Failed logins", int((df["status"] == "Failed").sum()))
 c3.metric("Attack incidents", len(inc))
 c4.metric("User-guessing IPs", len(inv))
 c5.metric("Suspicious successes", len(success))
+
+st.subheader("Attack sources by location")
+failed_counts = df[df["status"] == "Failed"]["ip"].value_counts().reset_index()
+failed_counts.columns = ["ip", "failed_logins"]
+geo = geolocate(failed_counts["ip"].tolist())
+
+if geo.empty:
+    st.info("GeoIP database not found. Place GeoLite2-City.mmdb in data/.")
+else:
+    geo = geo.merge(failed_counts, on="ip")
+    fig_map = px.scatter_geo(
+        geo, lat="lat", lon="lon", size="failed_logins",
+        hover_name="ip", hover_data=["country", "city", "failed_logins"],
+        projection="natural earth", title="Failed logins by source",
+    )
+    st.plotly_chart(fig_map, width="stretch")
+
+    by_country = (
+        geo.groupby("country")["failed_logins"].sum()
+        .reset_index().sort_values("failed_logins", ascending=False)
+    )
+    st.dataframe(by_country, width="stretch")
 
 timeline = df.set_index("time").resample("5min")["status"].count().reset_index()
 timeline.columns = ["Time", "Events"]
