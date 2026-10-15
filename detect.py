@@ -1,5 +1,6 @@
 import os
 import re
+import requests
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 
@@ -118,29 +119,64 @@ def ml_anomalies(df, contamination=0.05):
     flagged = features[features["anomaly"] & (features["failures"] > 0)]
     return flagged.sort_values("score", ascending=False)
 
-
-def geolocate(ips):
-    if not os.path.exists(GEO_DB):
-        return pd.DataFrame()
+def _is_private(ip):
+    import ipaddress
     try:
-        import geoip2.database
-    except ImportError:
-        return pd.DataFrame()
+        return ipaddress.ip_address(ip).is_private
+    except ValueError:
+        return True
+
+
+def _geolocate_online(ips):
     rows = []
-    with geoip2.database.Reader(GEO_DB) as reader:
-        for ip in ips:
-            try:
-                r = reader.city(ip)
+    for ip in ips:
+        try:
+            r = requests.get(
+                f"http://ip-api.com/json/{ip}"
+                "?fields=status,country,city,lat,lon",
+                timeout=5,
+            )
+            d = r.json()
+            if d.get("status") == "success":
                 rows.append({
                     "ip": ip,
-                    "country": r.country.name or "Unknown",
-                    "city": r.city.name or "",
-                    "lat": r.location.latitude,
-                    "lon": r.location.longitude,
+                    "country": d.get("country") or "Unknown",
+                    "city": d.get("city") or "",
+                    "lat": d.get("lat"),
+                    "lon": d.get("lon"),
                 })
-            except Exception:
-                continue
+        except Exception:
+            continue
     return pd.DataFrame(rows)
+
+
+def geolocate(ips, limit=40):
+    ips = [ip for ip in ips if not _is_private(ip)][:limit]
+    if not ips:
+        return pd.DataFrame()
+
+    if os.path.exists(GEO_DB):
+        try:
+            import geoip2.database
+            rows = []
+            with geoip2.database.Reader(GEO_DB) as reader:
+                for ip in ips:
+                    try:
+                        r = reader.city(ip)
+                        rows.append({
+                            "ip": ip,
+                            "country": r.country.name or "Unknown",
+                            "city": r.city.name or "",
+                            "lat": r.location.latitude,
+                            "lon": r.location.longitude,
+                        })
+                    except Exception:
+                        continue
+            return pd.DataFrame(rows)
+        except ImportError:
+            pass
+
+    return _geolocate_online(ips)
 
 
 if __name__ == "__main__":

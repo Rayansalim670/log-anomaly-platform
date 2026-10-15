@@ -9,6 +9,12 @@ from detect import (
 st.set_page_config(page_title="Log Anomaly Dashboard", layout="wide")
 st.title("Log Anomaly Dashboard")
 
+
+@st.cache_data(show_spinner="Locating attacker IPs...")
+def cached_geolocate(ips):
+    return geolocate(list(ips))
+
+
 uploaded = st.sidebar.file_uploader("Upload a log file", type=["log", "txt"])
 threshold = st.sidebar.slider("Brute force threshold (failures/min)", 3, 30, 5)
 min_users = st.sidebar.slider("Invalid users threshold (distinct names)", 2, 20, 3)
@@ -44,13 +50,14 @@ c3.metric("Attack incidents", len(inc))
 c4.metric("User-guessing IPs", len(inv))
 c5.metric("Suspicious successes", len(success))
 
+# ---- Attack map ----
 st.subheader("Attack sources by location")
 failed_counts = df[df["status"] == "Failed"]["ip"].value_counts().reset_index()
 failed_counts.columns = ["ip", "failed_logins"]
-geo = geolocate(failed_counts["ip"].tolist())
+geo = cached_geolocate(tuple(failed_counts["ip"].tolist()))
 
 if geo.empty:
-    st.info("GeoIP map skipped: place GeoLite2-City.mmdb in data/ to enable it.")
+    st.info("No public IPs to locate in this log (local addresses have no map position).")
 else:
     geo = geo.merge(failed_counts, on="ip")
     fig_map = px.scatter_geo(
@@ -67,6 +74,7 @@ else:
     )
     st.dataframe(by_country, width="stretch")
 
+# ---- Charts ----
 timeline = df.set_index("time").resample("5min")["status"].count().reset_index()
 timeline.columns = ["Time", "Events"]
 fig = px.line(timeline, x="Time", y="Events", title="Events over time")
@@ -92,6 +100,7 @@ with right:
         width="stretch",
     )
 
+# ---- Tables ----
 st.subheader("Attack incidents (grouped)")
 st.dataframe(inc, width="stretch")
 
