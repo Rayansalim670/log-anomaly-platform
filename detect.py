@@ -1,7 +1,6 @@
 import os
 import re
 import pandas as pd
-import geoip2.database
 from sklearn.ensemble import IsolationForest
 
 COLUMNS = ["time", "status", "user", "ip", "invalid"]
@@ -123,6 +122,10 @@ def ml_anomalies(df, contamination=0.05):
 def geolocate(ips):
     if not os.path.exists(GEO_DB):
         return pd.DataFrame()
+    try:
+        import geoip2.database
+    except ImportError:
+        return pd.DataFrame()
     rows = []
     with geoip2.database.Reader(GEO_DB) as reader:
         for ip in ips:
@@ -141,7 +144,8 @@ def geolocate(ips):
 
 
 if __name__ == "__main__":
-    df = parse("data/auth.log")
+    sample = "data/sample.log" if os.path.exists("data/sample.log") else "data/auth.log"
+    df = parse(sample)
     print(brute_force(df))
     print(incidents(brute_force(df)))
     print(invalid_users(df))

@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import plotly.express as px
 from detect import (
@@ -16,10 +17,13 @@ year = st.sidebar.number_input("Year (for logs without a year)", 2000, 2030, 201
 if uploaded is not None:
     text = uploaded.getvalue().decode("utf-8", errors="ignore")
     st.sidebar.success(f"Using: {uploaded.name}")
-else:
-    with open("data/auth.log") as f:
+elif os.path.exists("data/sample.log"):
+    with open("data/sample.log") as f:
         text = f.read()
-    st.sidebar.info("Using sample data/auth.log")
+    st.sidebar.info("Using sample data/sample.log")
+else:
+    st.warning("Upload a log file from the sidebar to start.")
+    st.stop()
 
 df = parse_text(text, int(year))
 
@@ -46,13 +50,14 @@ failed_counts.columns = ["ip", "failed_logins"]
 geo = geolocate(failed_counts["ip"].tolist())
 
 if geo.empty:
-    st.info("GeoIP database not found. Place GeoLite2-City.mmdb in data/.")
+    st.info("GeoIP map skipped: place GeoLite2-City.mmdb in data/ to enable it.")
 else:
     geo = geo.merge(failed_counts, on="ip")
     fig_map = px.scatter_geo(
         geo, lat="lat", lon="lon", size="failed_logins",
         hover_name="ip", hover_data=["country", "city", "failed_logins"],
         projection="natural earth", title="Failed logins by source",
+        height=450,
     )
     st.plotly_chart(fig_map, width="stretch")
 

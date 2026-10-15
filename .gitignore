@@ -3,6 +3,5 @@ __pycache__/
 *.pyc
 .DS_Store
 data/*.mmdb
-data/*.mmdb
-data/*.mmdb
-data/*.mmdb
+data/auth.log
+.env
