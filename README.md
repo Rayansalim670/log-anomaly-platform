@@ -4,6 +4,11 @@ A lightweight platform that parses SSH authentication logs, detects suspicious
 activity using rule-based and machine-learning methods, and visualizes the
 results in an interactive dashboard.
 
+**Live demo:** https://log-anomaly-platform.streamlit.app
+
+> Do not upload sensitive logs to the public demo: public IPs found in a
+> log are sent to ip-api.com for geolocation.
+
 ## Features
 
 - **Multi-format parser**: supports a custom `YYYY-MM-DD HH:MM:SS sshd ...`
