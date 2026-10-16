@@ -78,6 +78,12 @@ Generate a fresh synthetic log (optional):
 ```bash
 python generate_logs.py
 ```
+## Tests
+
+```bash
+python -m pip install pytest
+python -m pytest -v
+```
 
 ## GeoIP map
 
