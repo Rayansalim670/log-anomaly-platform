@@ -84,6 +84,15 @@ python generate_logs.py
 python -m pip install pytest
 python -m pytest -v
 ```
+## Tests
+
+```bash
+python -m pytest -v
+```
+
+The suite covers the parser (both log formats, invalid users, empty input),
+brute-force detection and its threshold, incident grouping, and suspicious
+success detection.
 
 ## GeoIP map
 
@@ -125,7 +134,6 @@ ip-api.com. Do not upload logs containing sensitive addresses.
 
 - Email or webhook alerts (e.g. Telegram)
 - Support for more log sources (Apache, Windows Event Log)
-- Unit tests for the parser and detection rules
 - Evaluation against labeled attack datasets
 
 ## License

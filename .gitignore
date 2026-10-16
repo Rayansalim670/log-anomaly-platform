@@ -5,3 +5,4 @@ __pycache__/
 data/*.mmdb
 data/auth.log
 .env
+.pytest_cache/
