@@ -22,6 +22,7 @@ results in an interactive dashboard.
   shows failed logins per source and per country (optional).
 - **Interactive dashboard**: file upload, adjustable thresholds, KPI metrics,
   timeline, top attackers, and alert tables.
+![Dashboard](screenshots/overview.png)
 
 ## Architecture
 
