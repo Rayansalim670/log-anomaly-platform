@@ -34,7 +34,7 @@ def test_parse_syslog_keeps_only_password_events():
 def test_parse_syslog_marks_invalid_user():
     df = parse_text(SYSLOG, year=2015)
     failed = df[df["status"] == "Failed"].iloc[0]
-    assert failed["invalid"] is True or failed["invalid"] == True
+    assert bool(failed["invalid"]) is True
     assert failed["user"] == "webmaster"
     assert failed["time"].year == 2015
 
@@ -47,6 +47,17 @@ def test_parse_custom_format():
 
 def test_parse_empty_text_returns_empty_frame():
     assert parse_text("garbage line\nanother").empty
+
+
+def test_empty_frame_keeps_columns_and_detectors_run():
+    df = parse_text("garbage")
+    assert list(df.columns) == ["time", "status", "user", "ip", "invalid"]
+    assert brute_force(df).empty
+
+
+def test_invalid_ip_is_rejected():
+    text = "Dec 10 06:55:48 LabSZ sshd[1]: Failed password for root from 1.2.3."
+    assert parse_text(text).empty
 
 
 def test_brute_force_detects_attacker():

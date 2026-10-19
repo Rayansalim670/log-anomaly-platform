@@ -1,7 +1,9 @@
+import ipaddress
 import os
 import re
-import requests
+
 import pandas as pd
+import requests
 from sklearn.ensemble import IsolationForest
 
 COLUMNS = ["time", "status", "user", "ip", "invalid"]
@@ -19,6 +21,14 @@ syslog_pattern = re.compile(
 )
 
 
+def _valid_ip(ip):
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except ValueError:
+        return False
+
+
 def parse_text(text, year=2015):
     rows = []
     for line in text.splitlines():
@@ -34,7 +44,9 @@ def parse_text(text, year=2015):
     df = pd.DataFrame(rows, columns=COLUMNS)
     df["invalid"] = df["invalid"].notna()
     df["time"] = pd.to_datetime(df["time"], format="mixed", errors="coerce")
-    return df.dropna(subset=["time"])
+    df = df.dropna(subset=["time"])
+    mask = df["ip"].map(_valid_ip).astype(bool)
+    return df[mask]
 
 
 def parse(path, year=2015):
@@ -119,8 +131,8 @@ def ml_anomalies(df, contamination=0.05):
     flagged = features[features["anomaly"] & (features["failures"] > 0)]
     return flagged.sort_values("score", ascending=False)
 
+
 def _is_private(ip):
-    import ipaddress
     try:
         return ipaddress.ip_address(ip).is_private
     except ValueError:
@@ -181,7 +193,7 @@ def geolocate(ips, limit=40):
 
 if __name__ == "__main__":
     sample = "data/sample.log" if os.path.exists("data/sample.log") else "data/auth.log"
-    df = parse(sample)
+    df = parse(sample, 2015)
     print(brute_force(df))
     print(incidents(brute_force(df)))
     print(invalid_users(df))

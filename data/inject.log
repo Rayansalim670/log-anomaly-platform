@@ -1,0 +1,5 @@
+Dec 10 06:55:48 LabSZ sshd[1]: Failed password for invalid user <script>alert(1)</script> from 8.8.8.8 port 22 ssh2
+Dec 10 06:55:49 LabSZ sshd[1]: Failed password for invalid user $(rm-rf) from 8.8.8.8 port 22 ssh2
+Dec 10 06:55:50 LabSZ sshd[1]: Failed password for invalid user {{7*7}} from 8.8.8.8 port 22 ssh2
+Dec 10 06:55:51 LabSZ sshd[1]: Failed password for invalid user ../../etc/passwd from 8.8.8.8 port 22 ssh2
+EOF
