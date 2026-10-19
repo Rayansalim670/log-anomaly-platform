@@ -17,7 +17,9 @@ def cached_geolocate(ips):
 
 
 # ---- Sidebar ----
-uploaded = st.sidebar.file_uploader("Upload a log file", type=["log", "txt"])
+uploaded = st.sidebar.file_uploader(
+    "Upload a log file", type=["log", "txt", "json", "jsonl", "csv"]
+)
 threshold = st.sidebar.slider("Brute force threshold (failures/min)", 3, 30, 5)
 min_users = st.sidebar.slider("Invalid users threshold (distinct names)", 2, 20, 3)
 year = st.sidebar.number_input("Year (for logs without a year)", 2000, 2030, 2015)

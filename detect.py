@@ -1,4 +1,7 @@
+import csv
+import io
 import ipaddress
+import json
 import os
 import re
 from datetime import datetime
@@ -33,6 +36,21 @@ apache_pattern = re.compile(
 )
 HTTP_FAILED_CODES = {"401", "403"}
 
+# Structured formats (JSON Lines, JSON array, CSV): field-name aliases
+ALIASES = {
+    "time": ["timecreated", "time", "timestamp", "@timestamp", "datetime",
+             "date", "date and time"],
+    "event": ["eventid", "event_id", "event id", "id"],
+    "status": ["status", "result", "outcome", "action"],
+    "user": ["targetusername", "username", "user", "account", "account name"],
+    "ip": ["ipaddress", "sourcenetworkaddress", "source network address",
+           "src_ip", "source_ip", "client_ip", "remote_ip", "ip"],
+    "substatus": ["substatus"],
+}
+FAILED_WORDS = {"failed", "failure", "fail", "denied", "4625"}
+OK_WORDS = {"accepted", "success", "succeeded", "ok", "allowed", "4624"}
+WIN_NO_SUCH_USER = "0xc0000064"
+
 
 def _valid_ip(ip):
     try:
@@ -59,24 +77,121 @@ def _apache_row(m):
     }
 
 
-def parse_text(text, year=2015):
+def _pick(rec, names):
+    for name in names:
+        value = rec.get(name)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _structured_status(rec):
+    event = _pick(rec, ALIASES["event"])
+    if event is not None:
+        value = str(event).strip()
+        if value == "4625":
+            return "Failed"
+        if value == "4624":
+            return "Accepted"
+    word = _pick(rec, ALIASES["status"])
+    if word is not None:
+        value = str(word).strip().lower()
+        if value in FAILED_WORDS:
+            return "Failed"
+        if value in OK_WORDS:
+            return "Accepted"
+    return None
+
+
+def _structured_row(raw):
+    if not isinstance(raw, dict):
+        return None
+    rec = {str(k).strip().lower(): v for k, v in raw.items()}
+    status = _structured_status(rec)
+    ip = _pick(rec, ALIASES["ip"])
+    stamp = _pick(rec, ALIASES["time"])
+    if status is None or ip is None or stamp is None:
+        return None
+    if isinstance(stamp, (int, float)):
+        return None
+    ts = pd.to_datetime(str(stamp), errors="coerce", utc=True)
+    if pd.isna(ts):
+        return None
+    user = _pick(rec, ALIASES["user"])
+    substatus = str(_pick(rec, ALIASES["substatus"]) or "").strip().lower()
+    invalid = (
+        "invalid user " if status == "Failed" and substatus == WIN_NO_SUCH_USER
+        else None
+    )
+    return {
+        "time": ts.tz_localize(None).strftime("%Y-%m-%d %H:%M:%S"),
+        "status": status,
+        "user": str(user) if user is not None else "-",
+        "ip": str(ip).strip(),
+        "invalid": invalid,
+        "method": "structured",
+    }
+
+
+def _parse_structured(text):
+    """Return rows for JSON / JSON Lines / CSV input, or None if not structured."""
+    body = text.lstrip("\ufeff").lstrip()
+    if not body:
+        return None
+    records = None
+    if body[0] in "[{":
+        try:
+            data = json.loads(body)
+            records = data if isinstance(data, list) else [data]
+        except ValueError:
+            records = []
+            for line in body.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    records.append(json.loads(line))
+                except ValueError:
+                    continue
+    else:
+        first_line = body.splitlines()[0]
+        if "," not in first_line:
+            return None
+        header = [h.strip().lower() for h in next(csv.reader([first_line]))]
+        if not any(h in ALIASES["ip"] for h in header):
+            return None
+        try:
+            records = list(csv.DictReader(io.StringIO(body)))
+        except csv.Error:
+            return []
     rows = []
-    for line in text.splitlines():
-        m = pattern.search(line)
-        if m:
-            rows.append(m.groupdict())
-            continue
-        m = syslog_pattern.search(line)
-        if m:
-            d = m.groupdict()
-            d["time"] = f"{year} {' '.join(d['time'].split())}"
-            rows.append(d)
-            continue
-        m = apache_pattern.search(line)
-        if m:
-            row = _apache_row(m)
-            if row:
-                rows.append(row)
+    for rec in records:
+        row = _structured_row(rec)
+        if row:
+            rows.append(row)
+    return rows
+
+
+def parse_text(text, year=2015):
+    rows = _parse_structured(text)
+    if rows is None:
+        rows = []
+        for line in text.splitlines():
+            m = pattern.search(line)
+            if m:
+                rows.append(m.groupdict())
+                continue
+            m = syslog_pattern.search(line)
+            if m:
+                d = m.groupdict()
+                d["time"] = f"{year} {' '.join(d['time'].split())}"
+                rows.append(d)
+                continue
+            m = apache_pattern.search(line)
+            if m:
+                row = _apache_row(m)
+                if row:
+                    rows.append(row)
     df = pd.DataFrame(rows, columns=COLUMNS)
     df["invalid"] = df["invalid"].notna()
     df["time"] = pd.to_datetime(df["time"], format="mixed", errors="coerce")
@@ -86,7 +201,7 @@ def parse_text(text, year=2015):
 
 
 def parse(path, year=2015):
-    with open(path) as f:
+    with open(path, encoding="utf-8", errors="ignore") as f:
         return parse_text(f.read(), year)
 
 
