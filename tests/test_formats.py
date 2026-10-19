@@ -89,4 +89,4 @@ def test_windows_burst_triggers_brute_force():
 def test_unrecognized_csv_returns_empty_frame():
     df = parse_text("name,age\nali,30\nsara,25\n")
     assert df.empty
-    assert list(df.columns) == ["time", "status", "user", "ip", "invalid", "method"]
+    assert list(df.columns) == ["time", "status", "user", "ip", "invalid", "method", "port"]

@@ -10,7 +10,7 @@ import pandas as pd
 import requests
 from sklearn.ensemble import IsolationForest
 
-COLUMNS = ["time", "status", "user", "ip", "invalid", "method"]
+COLUMNS = ["time", "status", "user", "ip", "invalid", "method", "port"]
 GEO_DB = "data/GeoLite2-City.mmdb"
 
 # Custom format: 2026-10-14 08:00:19 sshd Failed password for root from 1.2.3.4
@@ -35,6 +35,14 @@ apache_pattern = re.compile(
     r'"[^"]*" (?P<code>\d{3})'
 )
 HTTP_FAILED_CODES = {"401", "403"}
+
+# Firewall logs (UFW / iptables LOG): syslog or ISO timestamp, SRC= and DPT=
+fw_time = re.compile(
+    r"^(?:(?P<syslog>[A-Z][a-z]{2}\s+\d{1,2} \d{2}:\d{2}:\d{2})"
+    r"|(?P<iso>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}))"
+)
+fw_src = re.compile(r"SRC=([\d.]+)")
+fw_dpt = re.compile(r"DPT=(\d{1,5})")
 
 # Structured formats (JSON Lines, JSON array, CSV): field-name aliases
 ALIASES = {
@@ -74,6 +82,27 @@ def _apache_row(m):
         "user": m.group("user"),
         "ip": m.group("ip"),
         "method": "http",
+    }
+
+
+def _firewall_row(line, year):
+    """Convert a UFW/iptables LOG line to a row, or None if it does not match."""
+    src = fw_src.search(line)
+    dpt = fw_dpt.search(line)
+    stamp = fw_time.match(line)
+    if not (src and dpt and stamp):
+        return None
+    if stamp.group("syslog"):
+        when = f"{year} {' '.join(stamp.group('syslog').split())}"
+    else:
+        when = stamp.group("iso")
+    return {
+        "time": when,
+        "status": "Blocked",
+        "user": "-",
+        "ip": src.group(1),
+        "method": "firewall",
+        "port": dpt.group(1),
     }
 
 
@@ -187,6 +216,11 @@ def parse_text(text, year=2015):
                 d["time"] = f"{year} {' '.join(d['time'].split())}"
                 rows.append(d)
                 continue
+            if "SRC=" in line and "DPT=" in line:
+                row = _firewall_row(line, year)
+                if row:
+                    rows.append(row)
+                continue
             m = apache_pattern.search(line)
             if m:
                 row = _apache_row(m)
@@ -194,6 +228,7 @@ def parse_text(text, year=2015):
                     rows.append(row)
     df = pd.DataFrame(rows, columns=COLUMNS)
     df["invalid"] = df["invalid"].notna()
+    df["port"] = pd.to_numeric(df["port"], errors="coerce")
     df["time"] = pd.to_datetime(df["time"], format="mixed", errors="coerce")
     df = df.dropna(subset=["time"])
     mask = df["ip"].map(_valid_ip).astype(bool)
@@ -212,6 +247,21 @@ def brute_force(df, threshold=5):
         .size().reset_index(name="failures")
     )
     return per_min[per_min["failures"] > threshold]
+
+
+def port_scan(df, min_ports=10):
+    """IPs that hit many distinct destination ports within one minute (T1046)."""
+    cols = ["ip", "time", "distinct_ports", "packets"]
+    hits = df[df["port"].notna()]
+    if hits.empty:
+        return pd.DataFrame(columns=cols)
+    per_min = (
+        hits.groupby(["ip", pd.Grouper(key="time", freq="1min")])
+        .agg(distinct_ports=("port", "nunique"), packets=("port", "size"))
+        .reset_index()
+    )
+    result = per_min[per_min["distinct_ports"] >= min_ports]
+    return result.sort_values("distinct_ports", ascending=False)
 
 
 def incidents(alerts, gap="3min"):
@@ -348,5 +398,6 @@ if __name__ == "__main__":
     print(brute_force(df))
     print(incidents(brute_force(df)))
     print(invalid_users(df))
+    print(port_scan(df))
     print(suspicious_success(df))
     print(ml_anomalies(df))

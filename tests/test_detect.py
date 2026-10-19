@@ -51,7 +51,7 @@ def test_parse_empty_text_returns_empty_frame():
 
 def test_empty_frame_keeps_columns_and_detectors_run():
     df = parse_text("garbage")
-    assert list(df.columns) == ["time", "status", "user", "ip", "invalid", "method"]
+    assert list(df.columns) == ["time", "status", "user", "ip", "invalid", "method", "port"]
     assert brute_force(df).empty
 
 

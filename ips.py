@@ -13,7 +13,7 @@ import sys
 import pandas as pd
 
 from detect import (
-    parse, brute_force, incidents, invalid_users, suspicious_success
+    parse, brute_force, incidents, invalid_users, suspicious_success, port_scan
 )
 
 COLUMNS = ["ip", "score", "action", "ttl_hours", "reasons"]
@@ -48,7 +48,7 @@ def _is_protected(ip, allowlist, protect_private):
 def build_blocklist(df, allowlist=(), threshold=10, min_users=3,
                     min_score=40, protect_private=True,
                     sustained_min=30, success_threshold=15,
-                    recovery_max=20):
+                    recovery_max=20, scan_min_ports=10):
     scores, reasons = {}, {}
 
     def add(ip, points, why):
@@ -72,6 +72,11 @@ def build_blocklist(df, allowlist=(), threshold=10, min_users=3,
     guessing = invalid_users(df, min_users)
     for _, row in guessing.iterrows():
         add(row["ip"], 30, f"username guessing ({int(row['distinct_users'])} names)")
+
+    scans = port_scan(df, scan_min_ports)
+    if not scans.empty:
+        for ip, ports in scans.groupby("ip")["distinct_ports"].max().items():
+            add(ip, 40, f"port scan ({int(ports)} ports/min)")
 
     success = suspicious_success(df, success_threshold)
     if not success.empty:

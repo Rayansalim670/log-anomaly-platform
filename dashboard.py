@@ -2,7 +2,7 @@ import os
 import streamlit as st
 import plotly.express as px
 from detect import (
-    parse_text, brute_force, incidents, invalid_users,
+    parse_text, brute_force, incidents, invalid_users, port_scan,
     suspicious_success, ml_anomalies, geolocate
 )
 from ips import build_blocklist, to_iptables, to_nft, to_ufw
@@ -22,6 +22,7 @@ uploaded = st.sidebar.file_uploader(
 )
 threshold = st.sidebar.slider("Brute force threshold (failures/min)", 3, 30, 5)
 min_users = st.sidebar.slider("Invalid users threshold (distinct names)", 2, 20, 3)
+min_ports = st.sidebar.slider("Port scan threshold (distinct ports/min)", 3, 50, 10)
 year = st.sidebar.number_input("Year (for logs without a year)", 2000, 2030, 2015)
 allow_text = st.sidebar.text_area(
     "IPS allowlist (one IP or CIDR per line)",
@@ -50,22 +51,27 @@ if df.empty:
 alerts = brute_force(df, threshold)
 inc = incidents(alerts)
 inv = invalid_users(df, min_users)
+scans = port_scan(df, min_ports)
 success = suspicious_success(df, threshold)
 ml = ml_anomalies(df)
-blocklist = build_blocklist(df, allowlist, min_users=min_users)
+blocklist = build_blocklist(
+    df, allowlist, min_users=min_users, scan_min_ports=min_ports
+)
 
 # ---- Metrics ----
-c1, c2, c3, c4, c5, c6 = st.columns(6)
+c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
 c1.metric("Total events", len(df))
 c2.metric("Failed logins", int((df["status"] == "Failed").sum()))
 c3.metric("Attack incidents", len(inc))
 c4.metric("User-guessing IPs", len(inv))
-c5.metric("Suspicious successes", len(success))
-c6.metric("IPs to block", int((blocklist["action"] == "block").sum()))
+c5.metric("Port scanners", scans["ip"].nunique())
+c6.metric("Suspicious successes", len(success))
+c7.metric("IPs to block", int((blocklist["action"] == "block").sum()))
 
-# ---- Attack map ----
+# ---- Attack map (failed logins and blocked packets) ----
 st.subheader("Attack sources by location")
-failed_counts = df[df["status"] == "Failed"]["ip"].value_counts().reset_index()
+hostile = df[df["status"].isin(["Failed", "Blocked"])]
+failed_counts = hostile["ip"].value_counts().reset_index()
 failed_counts.columns = ["ip", "failed_logins"]
 geo = cached_geolocate(tuple(failed_counts["ip"].tolist()))
 
@@ -76,7 +82,7 @@ else:
     fig_map = px.scatter_geo(
         geo, lat="lat", lon="lon", size="failed_logins",
         hover_name="ip", hover_data=["country", "city", "failed_logins"],
-        projection="natural earth", title="Failed logins by source",
+        projection="natural earth", title="Hostile events by source",
         height=450,
     )
     st.plotly_chart(fig_map, width="stretch")
@@ -109,7 +115,7 @@ with right:
     by_status.columns = ["Status", "Count"]
     st.plotly_chart(
         px.pie(by_status, names="Status", values="Count",
-               title="Accepted vs Failed", hole=0.4),
+               title="Event types", hole=0.4),
         width="stretch",
     )
 
@@ -119,6 +125,9 @@ st.dataframe(inc, width="stretch")
 
 st.subheader("Username guessing (invalid users)")
 st.dataframe(inv, width="stretch")
+
+st.subheader("Port scans (firewall logs)")
+st.dataframe(scans, width="stretch")
 
 st.subheader("Brute force alerts (per minute)")
 st.dataframe(alerts, width="stretch")
