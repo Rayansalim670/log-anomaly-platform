@@ -1,24 +1,37 @@
 import ipaddress
 import os
 import re
+from datetime import datetime
 
 import pandas as pd
 import requests
 from sklearn.ensemble import IsolationForest
 
-COLUMNS = ["time", "status", "user", "ip", "invalid"]
+COLUMNS = ["time", "status", "user", "ip", "invalid", "method"]
 GEO_DB = "data/GeoLite2-City.mmdb"
 
+# Custom format: 2026-10-14 08:00:19 sshd Failed password for root from 1.2.3.4
 pattern = re.compile(
     r"(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) sshd "
-    r"(?P<status>Accepted|Failed) password for (?P<user>\w+) from (?P<ip>[\d.]+)"
+    r"(?P<status>Accepted|Failed) (?P<method>password|publickey) "
+    r"for (?P<user>\w+) from (?P<ip>[\d.]+)"
 )
 
+# Syslog format: Dec 10 06:55:48 host sshd[24200]: Failed password for ...
 syslog_pattern = re.compile(
     r"^(?P<time>[A-Z][a-z]{2}\s+\d{1,2} \d{2}:\d{2}:\d{2}) \S+ sshd\[\d+\]: "
-    r"(?P<status>Accepted|Failed) password for (?P<invalid>invalid user )?(?P<user>\S+) "
+    r"(?P<status>Accepted|Failed) (?P<method>password|publickey) "
+    r"for (?P<invalid>invalid user )?(?P<user>\S+) "
     r"from (?P<ip>[\d.]+)"
 )
+
+# Apache/Nginx common or combined access log
+apache_pattern = re.compile(
+    r'^(?P<ip>\S+) \S+ (?P<user>\S+) '
+    r'\[(?P<time>\d{2}/[A-Za-z]{3}/\d{4}:\d{2}:\d{2}:\d{2}) [+-]\d{4}\] '
+    r'"[^"]*" (?P<code>\d{3})'
+)
+HTTP_FAILED_CODES = {"401", "403"}
 
 
 def _valid_ip(ip):
@@ -27,6 +40,23 @@ def _valid_ip(ip):
         return True
     except ValueError:
         return False
+
+
+def _apache_row(m):
+    """Convert an Apache match to a row, or None if it is not a failure."""
+    if m.group("code") not in HTTP_FAILED_CODES:
+        return None
+    try:
+        t = datetime.strptime(m.group("time"), "%d/%b/%Y:%H:%M:%S")
+    except ValueError:
+        return None
+    return {
+        "time": t.strftime("%Y-%m-%d %H:%M:%S"),
+        "status": "Failed",
+        "user": m.group("user"),
+        "ip": m.group("ip"),
+        "method": "http",
+    }
 
 
 def parse_text(text, year=2015):
@@ -41,6 +71,12 @@ def parse_text(text, year=2015):
             d = m.groupdict()
             d["time"] = f"{year} {' '.join(d['time'].split())}"
             rows.append(d)
+            continue
+        m = apache_pattern.search(line)
+        if m:
+            row = _apache_row(m)
+            if row:
+                rows.append(row)
     df = pd.DataFrame(rows, columns=COLUMNS)
     df["invalid"] = df["invalid"].notna()
     df["time"] = pd.to_datetime(df["time"], format="mixed", errors="coerce")

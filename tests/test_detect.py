@@ -51,7 +51,7 @@ def test_parse_empty_text_returns_empty_frame():
 
 def test_empty_frame_keeps_columns_and_detectors_run():
     df = parse_text("garbage")
-    assert list(df.columns) == ["time", "status", "user", "ip", "invalid"]
+    assert list(df.columns) == ["time", "status", "user", "ip", "invalid", "method"]
     assert brute_force(df).empty
 
 
@@ -96,3 +96,36 @@ def test_suspicious_success_after_attack():
 def test_no_suspicious_success_without_failures():
     text = "2026-10-14 08:45:30 sshd Accepted password for ali from 192.168.1.5"
     assert suspicious_success(parse_text(text)).empty
+
+
+def test_publickey_login_is_parsed():
+    text = (
+        "Dec 10 09:32:20 LabSZ sshd[1]: Accepted publickey for deploy "
+        "from 203.0.113.5 port 50022 ssh2"
+    )
+    df = parse_text(text, year=2015)
+    assert len(df) == 1
+    assert df.iloc[0]["status"] == "Accepted"
+    assert df.iloc[0]["method"] == "publickey"
+
+
+def test_apache_401_is_failed_and_200_is_ignored():
+    text = (
+        '203.0.113.7 - - [10/Oct/2026:13:55:36 +0000] "POST /login HTTP/1.1" 401 512\n'
+        '203.0.113.7 - - [10/Oct/2026:13:55:40 +0000] "GET /index.html HTTP/1.1" 200 900\n'
+    )
+    df = parse_text(text)
+    assert len(df) == 1
+    assert df.iloc[0]["status"] == "Failed"
+    assert df.iloc[0]["method"] == "http"
+    assert df.iloc[0]["time"].year == 2026
+
+
+def test_apache_burst_triggers_brute_force():
+    lines = "\n".join(
+        f'203.0.113.7 - - [10/Oct/2026:13:55:{i:02d} +0000] "POST /login HTTP/1.1" 401 512'
+        for i in range(1, 31)
+    )
+    alerts = brute_force(parse_text(lines), threshold=5)
+    assert len(alerts) == 1
+    assert alerts.iloc[0]["failures"] == 30
